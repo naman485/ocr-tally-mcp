@@ -1,0 +1,55 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      - ./cheques:/app/cheques
+      - ./audit.db:/app/audit.db
+    depends_on:
+      - tally-simulator
+    restart: unless-stopped
+
+  # Stub Tally Prime HTTP server for local testing.
+  # Accepts XML POST on port 9000 and returns a success response.
+  tally-simulator:
+    image: python:3.12-slim
+    ports:
+      - "9000:9000"
+    command: >
+      python -c "
+      from http.server import HTTPServer, BaseHTTPRequestHandler
+
+      class TallyHandler(BaseHTTPRequestHandler):
+          def do_POST(self):
+              length = int(self.headers.get('Content-Length', 0))
+              body = self.rfile.read(length).decode('utf-8')
+              print(f'Received XML ({length} bytes)')
+
+              # Determine if it's a ledger or voucher request
+              if '<LEDGER' in body:
+                  resp = '<RESPONSE><CREATED>1</CREATED><ALTERED>0</ALTERED></RESPONSE>'
+              elif '<VOUCHER' in body:
+                  resp = '<RESPONSE><CREATED>1</CREATED><ALTERED>0</ALTERED><LASTVCHID>999</LASTVCHID></RESPONSE>'
+              else:
+                  resp = '<RESPONSE><CREATED>0</CREATED><ERROR>Unknown request</ERROR></RESPONSE>'
+
+              self.send_response(200)
+              self.send_header('Content-Type', 'application/xml')
+              self.end_headers()
+              self.wfile.write(resp.encode())
+
+          def do_GET(self):
+              self.send_response(200)
+              self.send_header('Content-Type', 'text/plain')
+              self.end_headers()
+              self.wfile.write(b'Tally Simulator OK')
+
+      print('Tally simulator running on port 9000')
+      HTTPServer(('0.0.0.0', 9000), TallyHandler).serve_forever()
+      "
+    restart: unless-stopped
