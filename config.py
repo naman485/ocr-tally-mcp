@@ -55,6 +55,8 @@ class Settings(BaseSettings):
 
     @property
     def tally_url(self) -> str:
+        if self.tally_host.startswith("https://"):
+            return self.tally_host
         return f"{self.tally_host}:{self.tally_port}"
 
     @property

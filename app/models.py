@@ -26,6 +26,7 @@ class AadhaarData(BaseModel):
     date_of_birth: date | None = None
     gender: Gender | None = None
     address: str | None = None
+    village: str | None = None
     name_confidence: float = Field(..., ge=0.0, le=100.0)
     aadhaar_confidence: float = Field(..., ge=0.0, le=100.0)
     raw_ocr_response: dict[str, Any] = Field(default_factory=dict)

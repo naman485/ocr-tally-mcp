@@ -225,7 +225,7 @@ async def _process_job(job: PipelineJob) -> None:
         party_name=aadhaar_data.full_name,
         contra_ledger=s.tally_contra_ledger,
         amount=s.tally_default_amount,
-        narration=f"Auto-created from Aadhaar via WhatsApp. Masked: {masked}",
+        narration=f"Aadhaar: {aadhaar_data.aadhaar_number} | Village: {aadhaar_data.village or 'N/A'}",
         voucher_date=date.today(),
         guid=generate_guid(),
     )

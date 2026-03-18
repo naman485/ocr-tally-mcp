@@ -99,7 +99,17 @@ def build_voucher_xml(voucher: TallyVoucher, company: str = "") -> str:
     guid = voucher.guid or generate_guid()
 
     # Format date as Tally expects: YYYYMMDD
-    tally_date = voucher.voucher_date.strftime("%Y%m%d")
+    # TODO: Educational Mode only allows 1st, 2nd, 31st — pin to 1st for testing
+    tally_date = voucher.voucher_date.strftime("%Y%m") + "01"
+
+    # Compute financial year (Apr–Mar) that contains the voucher date
+    fy_start_year = (
+        voucher.voucher_date.year
+        if voucher.voucher_date.month >= 4
+        else voucher.voucher_date.year - 1
+    )
+    sv_from = f"{fy_start_year}0401"
+    sv_to = f"{fy_start_year + 1}0331"
 
     # Amount signs — critical for zero-sum balance
     if voucher.voucher_type == VoucherType.RECEIPT:
@@ -111,48 +121,50 @@ def build_voucher_xml(voucher: TallyVoucher, company: str = "") -> str:
         party_amount = f"-{voucher.amount:.2f}"
         contra_amount = f"{voucher.amount:.2f}"
 
-    return f"""<?xml version="1.0" encoding="UTF-8"?>
-<ENVELOPE>
-  <HEADER>
-    <TALLYREQUEST>Import Data</TALLYREQUEST>
-  </HEADER>
-  <BODY>
-    <IMPORTDATA>
-      <REQUESTDESC>
-        <REPORTNAME>Vouchers</REPORTNAME>
-        <STATICVARIABLES>
-          <SVCURRENTCOMPANY>{safe_company}</SVCURRENTCOMPANY>
-        </STATICVARIABLES>
-      </REQUESTDESC>
-      <REQUESTDATA>
-        <TALLYMESSAGE xmlns:UDF="TallyUDF">
-          <VOUCHER REMOTEID="WA-{guid}" VCHTYPE="{safe_vtype}" ACTION="Create">
-            <DATE>{tally_date}</DATE>
-            <VOUCHERTYPENAME>{safe_vtype}</VOUCHERTYPENAME>
-            <VOUCHERNUMBER>{sanitize_for_xml(voucher.voucher_number)}</VOUCHERNUMBER>
-            <NARRATION>{safe_narration}</NARRATION>
-            <PARTYLEDGERNAME>{safe_party}</PARTYLEDGERNAME>
-            <EFFECTIVEDATE>{tally_date}</EFFECTIVEDATE>
-            <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>{safe_party}</LEDGERNAME>
-              <ISDEEMEDPOSITIVE>{
-                "No" if voucher.voucher_type == VoucherType.RECEIPT else "Yes"
-              }</ISDEEMEDPOSITIVE>
-              <AMOUNT>{party_amount}</AMOUNT>
-            </ALLLEDGERENTRIES.LIST>
-            <ALLLEDGERENTRIES.LIST>
-              <LEDGERNAME>{safe_contra}</LEDGERNAME>
-              <ISDEEMEDPOSITIVE>{
-                "Yes" if voucher.voucher_type == VoucherType.RECEIPT else "No"
-              }</ISDEEMEDPOSITIVE>
-              <AMOUNT>{contra_amount}</AMOUNT>
-            </ALLLEDGERENTRIES.LIST>
-          </VOUCHER>
-        </TALLYMESSAGE>
-      </REQUESTDATA>
-    </IMPORTDATA>
-  </BODY>
-</ENVELOPE>"""
+    is_receipt = voucher.voucher_type == VoucherType.RECEIPT
+    party_deemed = "No" if is_receipt else "Yes"
+    contra_deemed = "Yes" if is_receipt else "No"
+
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<ENVELOPE>"
+        "<HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>"
+        "<BODY><IMPORTDATA>"
+        "<REQUESTDESC>"
+        "<REPORTNAME>Vouchers</REPORTNAME>"
+        "<STATICVARIABLES>"
+        f"<SVCURRENTCOMPANY>{safe_company}</SVCURRENTCOMPANY>"
+        f"<SVFROMDATE>{sv_from}</SVFROMDATE>"
+        f"<SVTODATE>{sv_to}</SVTODATE>"
+        "</STATICVARIABLES>"
+        "</REQUESTDESC>"
+        "<REQUESTDATA>"
+        '<TALLYMESSAGE xmlns:UDF="TallyUDF">'
+        f'<VOUCHER REMOTEID="WA-{guid}" VCHTYPE="{safe_vtype}" ACTION="Create">'
+        f"<DATE>{tally_date}</DATE>"
+        f"<VOUCHERTYPENAME>{safe_vtype}</VOUCHERTYPENAME>"
+        f"<VOUCHERNUMBER>{sanitize_for_xml(voucher.voucher_number)}</VOUCHERNUMBER>"
+        f"<NARRATION>{safe_narration}</NARRATION>"
+        f"<PARTYLEDGERNAME>{safe_party}</PARTYLEDGERNAME>"
+        f"<EFFECTIVEDATE>{tally_date}</EFFECTIVEDATE>"
+        "<ALLLEDGERENTRIES.LIST>"
+        f"<LEDGERNAME>{safe_party}</LEDGERNAME>"
+        f"<ISDEEMEDPOSITIVE>{party_deemed}</ISDEEMEDPOSITIVE>"
+        f"<AMOUNT>{party_amount}</AMOUNT>"
+        "</ALLLEDGERENTRIES.LIST>"
+        "<ALLLEDGERENTRIES.LIST>"
+        f"<LEDGERNAME>{safe_contra}</LEDGERNAME>"
+        f"<ISDEEMEDPOSITIVE>{contra_deemed}</ISDEEMEDPOSITIVE>"
+        f"<AMOUNT>{contra_amount}</AMOUNT>"
+        "</ALLLEDGERENTRIES.LIST>"
+        "</VOUCHER>"
+        "</TALLYMESSAGE>"
+        "</REQUESTDATA>"
+        "</IMPORTDATA></BODY>"
+        "</ENVELOPE>"
+    )
+    log.debug("voucher_xml_payload", xml=xml[:800])
+    return xml
 
 
 # ---------- HTTP Push to Tally ----------
